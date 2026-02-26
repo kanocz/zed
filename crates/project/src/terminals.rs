@@ -6,7 +6,7 @@ use async_channel::bounded;
 use futures::{FutureExt, future::Shared};
 use itertools::Itertools as _;
 use language::LanguageName;
-use remote::RemoteClient;
+use remote::{Interactive, RemoteClient};
 use settings::{Settings, SettingsLocation};
 use std::{
     borrow::Cow,
@@ -521,6 +521,23 @@ impl Project {
         command: String,
         cx: &mut Context<Self>,
     ) -> Task<Result<smol::process::Command>> {
+        self.exec_in_shell_with_interactive_mode(command, Interactive::Yes, cx)
+    }
+
+    pub fn exec_in_shell_for_pipe(
+        &self,
+        command: String,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<smol::process::Command>> {
+        self.exec_in_shell_with_interactive_mode(command, Interactive::No, cx)
+    }
+
+    fn exec_in_shell_with_interactive_mode(
+        &self,
+        command: String,
+        interactive: Interactive,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<smol::process::Command>> {
         let path = self.first_project_directory(cx);
         let remote_client = self.remote_client.clone();
         let settings = self.terminal_settings(&path, cx).clone();
@@ -547,12 +564,13 @@ impl Project {
             project.update(cx, move |_, cx| {
                 match remote_client {
                     Some(remote_client) => {
-                        let command_template = remote_client.read(cx).build_command(
+                        let command_template = remote_client.read(cx).build_command_with_options(
                             Some(command),
                             &args,
                             &env,
                             None,
                             None,
+                            interactive,
                         )?;
                         let mut command = new_std_command(command_template.program);
                         command.args(command_template.args);
